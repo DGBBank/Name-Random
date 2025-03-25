@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Name Randomizer</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        body {
+            text-align: center;
+            font-family: Arial, sans-serif;
+        }
+        #logo {
+            width: 350px;
+            margin: 20px auto;
+        }
+        #dropdown {
+            width: 200px;
+            padding: 10px;
+            font-size: 16px;
+        }
+        #randomBtn, #historyBtn {
+            margin: 10px;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <img id="logo" src="Logo.png" alt="Logo">
+    <h1>Name Randomizer</h1>
+    <select id="dropdown"></select>
+    <br>
+    <button id="randomBtn">Random</button>
+    <button id="historyBtn">History</button>
+    <div id="history"></div>
+
+    <script>
+        const GITHUB_EXCEL_URL = "https://raw.githubusercontent.com/DGBBank/Name-Random/main/Name.xlsx";
+        let names = [];
+        let winners = new Set();
+
+        async function fetchExcelData() {
+            const response = await fetch(GITHUB_EXCEL_URL);
+            const arrayBuffer = await response.arrayBuffer();
+            const workbook = XLSX.read(arrayBuffer, { type: "array" });
+            const sheet = workbook.Sheets[workbook.SheetNames[0]];
+            const data = XLSX.utils.sheet_to_json(sheet);
+            names = data.map(row => row["Account Name"]);
+            populateDropdown();
+        }
+
+        function populateDropdown() {
+            const dropdown = document.getElementById("dropdown");
+            dropdown.innerHTML = "";
+            names.forEach(name => {
+                if (!winners.has(name)) {
+                    const option = document.createElement("option");
+                    option.textContent = name;
+                    dropdown.appendChild(option);
+                }
+            });
+        }
+
+        document.getElementById("randomBtn").addEventListener("click", () => {
+            if (names.length === 0 || document.getElementById("dropdown").options.length === 0) return;
+            let index = 0;
+            const dropdown = document.getElementById("dropdown");
+            const totalOptions = dropdown.options.length;
+            
+            let animationDuration = 2000;
+            let intervalTime = 100;
+            let elapsed = 0;
+            
+            const interval = setInterval(() => {
+                index = (index + 1) % totalOptions;
+                dropdown.selectedIndex = index;
+                elapsed += intervalTime;
+                if (elapsed >= animationDuration) {
+                    clearInterval(interval);
+                    setTimeout(() => { 
+                        const winner = dropdown.options[dropdown.selectedIndex].text;
+                        winners.add(winner);
+                        alert(`Winner is: ${winner}`);
+                        populateDropdown();
+                    }, 100);
+                }
+            }, intervalTime);
+        });
+
+        document.getElementById("historyBtn").addEventListener("click", () => {
+            const historyDiv = document.getElementById("history");
+            historyDiv.innerHTML = "<h3>Winners:</h3>" + [...winners].map(winner => `${winner} - ${new Date().toLocaleString()}`).join("<br>");
+        });
+
+        fetchExcelData();
+    </script>
+</body>
+</html>
