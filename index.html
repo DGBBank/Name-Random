@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Name Randomizer</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        body {
+            text-align: center;
+            font-family: Arial, sans-serif;
+        }
+
+        #logo {
+            width: 350px;
+            margin: 20px auto;
+        }
+
+        #dropdown {
+            width: 385px;
+            padding: 10px;
+            font-size: 16px;
+        }
+
+        button {
+            margin: 10px;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+
+        #history {
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <img id="logo" src="Logo.png" alt="Logo" />
+    <h1>Name Randomizer</h1>
+    <select id="dropdown"></select>
+    <br />
+    <button id="randomBtn">Random</button>
+    <button id="historyBtn">History</button>
+    <button id="clearHistoryBtn">Clear History</button>
+    <div id="history"></div>
+
+    <!-- 🎵 Applause Sound -->
+    <audio id="winnerSound">
+        <source src="https://www.soundjay.com/human/sounds/applause-8.mp3" type="audio/mpeg" />
+    </audio>
+
+    <script>
+        const GITHUB_EXCEL_URL = "https://raw.githubusercontent.com/DGBBank/Name-Random/main/Name.xlsx";
+        let names = [];
+        let winners = new Set(JSON.parse(localStorage.getItem("winners")) || []);
+
+        async function fetchExcelData() {
+            try {
+                const response = await fetch(GITHUB_EXCEL_URL);
+                if (!response.ok) throw new Error("Failed to fetch Excel file.");
+
+                const arrayBuffer = await response.arrayBuffer();
+                const workbook = XLSX.read(arrayBuffer, { type: "array" });
+                const sheet = workbook.Sheets[workbook.SheetNames[0]];
+                const data = XLSX.utils.sheet_to_json(sheet);
+
+                const firstColumnKey = Object.keys(data[0] || {})[0];
+                names = data.map(row => row[firstColumnKey]).filter(name => name);
+                names = names.filter(name => !winners.has(name));
+                populateDropdown();
+            } catch (error) {
+                alert("Error loading names: " + error.message);
+                console.error(error);
+            }
+        }
+
+        function populateDropdown() {
+            const dropdown = document.getElementById("dropdown");
+            dropdown.innerHTML = "";
+
+            if (names.length === 0) {
+                dropdown.innerHTML = `<option disabled selected>No names left</option>`;
+                return;
+            }
+
+            names.forEach(name => {
+                const option = document.createElement("option");
+                option.textContent = name;
+                dropdown.appendChild(option);
+            });
+        }
+
+        document.getElementById("randomBtn").addEventListener("click", () => {
+            if (names.length === 0) return;
+
+            const dropdown = document.getElementById("dropdown");
+            const totalOptions = dropdown.options.length;
+            const randomIndex = Math.floor(Math.random() * names.length);
+            const winner = names[randomIndex];
+            const stopAtIndex = Array.from(dropdown.options).findIndex(option => option.textContent === winner);
+
+            let currentIndex = dropdown.selectedIndex;
+            let steps = Math.floor(totalOptions / 2 + stopAtIndex);
+            let stepDelay = 15;
+
+            let spin = setInterval(() => {
+                currentIndex = (currentIndex + 1) % totalOptions;
+                dropdown.selectedIndex = currentIndex;
+                steps--;
+
+                if (steps <= 0) {
+                    clearInterval(spin);
+                    dropdown.selectedIndex = stopAtIndex;
+
+                    const sound = document.getElementById("winnerSound");
+                    sound.currentTime = 0;
+                    sound.play();
+
+                    // 🗣️ After sound ends, speak the name first, then alert
+                    sound.onended = () => {
+                        if (/[a-zA-Z]/.test(winner)) {
+                            speakWinnerName(winner, () => {
+                                showWinnerPopup(winner);
+                            });
+                        } else {
+                            showWinnerPopup(winner);
+                        }
+                    };
+                }
+            }, stepDelay);
+        });
+
+        function speakWinnerName(name, callback) {
+            const utterance = new SpeechSynthesisUtterance(`The winner is ${name}`);
+            utterance.lang = 'en-US';
+            utterance.rate = 1;
+            utterance.onend = callback;
+            speechSynthesis.speak(utterance);
+        }
+
+        function showWinnerPopup(winner) {
+            alert(`🎉 Winner: ${winner}`);
+            winners.add(winner);
+            localStorage.setItem("winners", JSON.stringify([...winners]));
+            names = names.filter(name => name !== winner);
+            populateDropdown();
+        }
+
+        document.getElementById("historyBtn").addEventListener("click", () => {
+            const historyDiv = document.getElementById("history");
+            if (winners.size === 0) {
+                historyDiv.innerHTML = "<h3>No winners yet</h3>";
+                return;
+            }
+            historyDiv.innerHTML = "<h3>Winners:</h3>" +
+                [...winners].map(winner => `${winner} - ${new Date().toLocaleString()}`).join("<br>");
+        });
+
+        document.getElementById("clearHistoryBtn").addEventListener("click", () => {
+            if (confirm("Are you sure you want to clear all winners?")) {
+                winners.clear();
+                localStorage.removeItem("winners");
+                fetchExcelData();
+                document.getElementById("history").innerHTML = "";
+                alert("History cleared.");
+            }
+        });
+
+        fetchExcelData();
+    </script>
+</body>
+</html>
