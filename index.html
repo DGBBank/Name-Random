@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Name Randomizer</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        body {
+            text-align: center;
+            font-family: Arial, sans-serif;
+        }
+
+        #logo {
+            width: 350px;
+            margin: 20px auto;
+        }
+
+        #dropdown {
+            width: 385px;
+            padding: 10px;
+            font-size: 16px;
+        }
+
+        button {
+            margin: 10px;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+
+        #history {
+            margin-top: 20px;
+        }
+
+        #prizeCount {
+            width: 60px;
+            font-size: 16px;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <img id="logo" src="Logo.png" alt="Logo" />
+    <h1>Name Randomizer</h1>
+    <select id="dropdown"></select>
+    <br />
+    <label for="prizeCount"># of Prizes:</label>
+    <input type="number" id="prizeCount" min="1" max="100" value="1" />
+    <br />
+    <button id="randomBtn">Random</button>
+    <button id="historyBtn">History</button>
+    <button id="clearHistoryBtn">Clear History</button>
+    <div id="history"></div>
+
+    <audio id="winnerSound">
+        <source src="https://www.soundjay.com/human/sounds/applause-8.mp3" type="audio/mpeg" />
+    </audio>
+
+    <script>
+        const GITHUB_EXCEL_URL = "https://raw.githubusercontent.com/DGBBank/Name-Random/main/Name.xlsx";
+        let namesWithScores = [];
+        let winners = JSON.parse(localStorage.getItem("winners")) || [];
+
+        function getWinnerNamesSet() {
+            return new Set(winners.map(w => w.name));
+        }
+
+        async function fetchExcelData() {
+            try {
+                const response = await fetch(GITHUB_EXCEL_URL);
+                if (!response.ok) throw new Error("Failed to fetch Excel file.");
+
+                const arrayBuffer = await response.arrayBuffer();
+                const workbook = XLSX.read(arrayBuffer, { type: "array" });
+                const sheet = workbook.Sheets[workbook.SheetNames[0]];
+                const data = XLSX.utils.sheet_to_json(sheet);
+
+                const firstColumnKey = Object.keys(data[0])[0]; // Name
+                const secondColumnKey = Object.keys(data[0])[1]; // Score
+                const existingWinners = getWinnerNamesSet();
+
+                namesWithScores = data
+                    .map(row => ({
+                        name: row[firstColumnKey],
+                        score: parseFloat(row[secondColumnKey]) || 1
+                    }))
+                    .filter(entry => entry.name && !existingWinners.has(entry.name));
+
+                populateDropdown();
+            } catch (error) {
+                alert("Error loading names: " + error.message);
+                console.error(error);
+            }
+        }
+
+        function populateDropdown() {
+            const dropdown = document.getElementById("dropdown");
+            dropdown.innerHTML = "";
+
+            if (namesWithScores.length === 0) {
+                dropdown.innerHTML = `<option disabled selected>No names left</option>`;
+                return;
+            }
+
+            namesWithScores.forEach(entry => {
+                const option = document.createElement("option");
+                option.textContent = entry.name;
+                dropdown.appendChild(option);
+            });
+        }
+
+        function weightedRandomSelection(pool) {
+            const totalWeight = pool.reduce((sum, entry) => sum + entry.score, 0);
+            const rand = Math.random() * totalWeight;
+            let runningSum = 0;
+
+            for (let i = 0; i < pool.length; i++) {
+                runningSum += pool[i].score;
+                if (rand <= runningSum) return i;
+            }
+
+            return pool.length - 1; // fallback
+        }
+
+        document.getElementById("randomBtn").addEventListener("click", () => {
+            if (namesWithScores.length === 0) return;
+
+            let prizeCount = parseInt(document.getElementById("prizeCount").value);
+            if (isNaN(prizeCount) || prizeCount <= 0) prizeCount = 1;
+            if (prizeCount > namesWithScores.length) prizeCount = namesWithScores.length;
+
+            const selectedWinners = [];
+            for (let i = 0; i < prizeCount; i++) {
+                const randomIndex = weightedRandomSelection(namesWithScores);
+                const winnerEntry = namesWithScores[randomIndex];
+                const winnerTime = new Date().toLocaleString();
+
+                selectedWinners.push({ name: winnerEntry.name, time: winnerTime });
+                namesWithScores.splice(randomIndex, 1); // remove to avoid duplicate
+            }
+
+            const dropdown = document.getElementById("dropdown");
+            const allOptions = Array.from(dropdown.options);
+            const lastWinnerIndex = allOptions.findIndex(option => option.textContent === selectedWinners[selectedWinners.length - 1].name);
+
+            let currentIndex = dropdown.selectedIndex;
+            let steps = Math.floor(allOptions.length / 2 + lastWinnerIndex);
+            let stepDelay = 15;
+
+            let spin = setInterval(() => {
+                currentIndex = (currentIndex + 1) % allOptions.length;
+                dropdown.selectedIndex = currentIndex;
+                steps--;
+
+                if (steps <= 0) {
+                    clearInterval(spin);
+                    dropdown.selectedIndex = lastWinnerIndex;
+
+                    const sound = document.getElementById("winnerSound");
+                    sound.currentTime = 0;
+                    sound.play();
+
+                    sound.onended = () => {
+                        showWinnerPopup(selectedWinners);
+                    };
+                }
+            }, stepDelay);
+        });
+
+        function showWinnerPopup(winnerList) {
+            alert(`🎉 Winners:\n${winnerList.map(w => w.name).join("\n")}`);
+            winners.push(...winnerList);
+            localStorage.setItem("winners", JSON.stringify(winners));
+            populateDropdown();
+        }
+
+        document.getElementById("historyBtn").addEventListener("click", () => {
+            const historyDiv = document.getElementById("history");
+            if (winners.length === 0) {
+                historyDiv.innerHTML = "<h3>No winners yet</h3>";
+                return;
+            }
+
+            historyDiv.innerHTML = "<h3>Winners:</h3>" +
+                winners.map(w => `${w.name} - ${w.time}`).join("<br>");
+        });
+
+        document.getElementById("clearHistoryBtn").addEventListener("click", () => {
+            if (confirm("Are you sure you want to clear all winners?")) {
+                winners = [];
+                localStorage.removeItem("winners");
+                fetchExcelData();
+                document.getElementById("history").innerHTML = "";
+                alert("History cleared.");
+            }
+        });
+
+        fetchExcelData();
+    </script>
+</body>
+</html>
